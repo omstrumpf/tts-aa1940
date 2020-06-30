@@ -118,6 +118,19 @@ incomeCounters = {
     France = "95ef6e",
 }
 
+totalIncomeCounters = {
+    Germany = "58592d",
+    Russia = "153429",
+    Japan = "fc04aa",
+    America = "abeb00",
+    China = "f532b5",
+    UKEurope = "fe6e46",
+    UKPacific = "7272f8",
+    Italy = "c0ce8b",
+    ANZAC = "bf51bd",
+    France = "482983",
+}
+
 ipcCounters = {
     Germany = "7c0498",
     Russia = "c29511",
@@ -145,61 +158,63 @@ collectIncomeButtons = {
 }
 
 ------ National Objective GUIDS
+-- GUID, Value, OneTime, MultiChip
 nationalObjectiveZones = {
     Germany = {
-        {"afd1c8", 5, false},
-        {"86b04d", 5, false},
-        {"fb1a0d", 5, false},
-        {"73656d", 5, false},
-        {"d51007", 5, false},
-        {"d51007", 2, false},
-        {"241d74", 2, false},
-        {"241d74", 2, false},
-        {"241d74", 5, false},
-        {"ef2d73", 5, false},
+        {"afd1c8", 5, false, false},
+        {"86b04d", 5, false, false},
+        {"fb1a0d", 5, false, false},
+        {"73656d", 5, false, false},
+        {"d51007", 5, false, false},
+        {"58ebfd", 2, false, false},
+        {"241d74", 2, false, false},
+        {"63204e", 2, false, false},
+        {"d1a044", 5, false, false},
+        {"ef2d73", 5, false, false},
     },
     Italy = {
-        {"aed939", 5, false},
-        {"9974c5", 5, false},
-        {"c2f4a7", 5, false},
-        {"5ef8bc", 2, false},
-        {"a64c0e", 2, false},
-        {"0f321a", 2, false},
+        {"aed939", 5, false, false},
+        {"9974c5", 5, false, false},
+        {"c2f4a7", 5, false, false},
+        {"5ef8bc", 2, false, false},
+        {"a64c0e", 2, false, false},
+        {"0f321a", 2, false, false},
     },
     Japan = {
-        {"e6e534", 5, false},
-        {"c577bb", 5, false},
-        {"950407", 5, false},
-        {"75ab2b", 5, false},
-        {"c27396", 5, false},
-        {"4661a1", 5, false},
-        {"4ebb33", 10, false},
+        {"e6e534", 5, false, false},
+        {"c577bb", 5, false, false},
+        {"950407", 5, false, false},
+        {"75ab2b", 5, false, false},
+        {"c27396", 5, false, false},
+        {"4661a1", 5, false, false},
+        {"4ebb33", 10, false, false},
     },
     Russia = {
-        {"4339ab", 5, false},
-        {"bc479c", 3, false},
-        {"447276", 10, true},
+        {"4339ab", 5, false, false},
+        {"bc479c", 3, false, true},
+        {"447276", 10, true, false},
     },
     UKEurope = {
-        {"243162", 5, false},
+        {"243162", 5, false, false},
     },
     UKPacific = {
-        {"9afda0", 5, false},
+        {"9afda0", 5, false, false},
     },
     America = {
-        {"20a536", 10, false},
-        {"5390a3", 5, false},
-        {"7b2fb6", 5, false},
-        {"ab3fbd", 5, false},
-        {"5ec66f", 5, false},
+        {"20a536", 10, false, false},
+        {"5390a3", 5, false, false},
+        {"7b2fb6", 5, false, false},
+        {"ab3fbd", 5, false, false},
+        {"5ec66f", 5, false, false},
     },
     China = {
-        {"4d0abb", 6, false},
+        {"4d0abb", 6, false, false},
     },
     ANZAC = {
-        {"5532d0", 5, false},
-        {"235154", 5, false},
+        {"5532d0", 5, false, false},
+        {"235154", 5, false, false},
     },
+    France = {},
 }
 
 ------ BATTLE GUIDS
@@ -302,16 +317,51 @@ local function isFaceUp(obj)
     return (z > -15 and z < 15)
 end
 
+-- Returns the face-up tracker chip with the largest stack
 local function findFaceUpTracker(objs)
+    local ret = nil
+
     for _, obj in ipairs(objs) do
         local name = obj.getName()
 
-        if (string.match(name, "Tracker") or string.match(name, "Occupation")) and isFaceUp(obj) then
-            return obj
+        if string.match(name, "Tracker") and isFaceUp(obj) then
+            if (not ret) or ret.getQuantity() < obj.getQuantity() then
+              ret = obj
+            end
         end
     end
 
-    return nil
+    return ret
+end
+
+local function countBonusIncome(power, doFlip)
+  local bonusIncome = 0
+  local oneTimeIncome = 0
+
+  for _, zoneData in ipairs(nationalObjectiveZones[power]) do
+      local zoneObjects = getObjectFromGUID(zoneData[1]).getObjects()
+      local amount = zoneData[2]
+      local oneTime = zoneData[3]
+      local multiChip = zoneData[4]
+
+      local faceUp = findFaceUpTracker(zoneObjects)
+
+      if faceUp then
+          if oneTime then
+              oneTimeIncome = oneTimeIncome + amount
+
+              if doFlip then
+                  faceUp.flip()
+              end
+          elseif multiChip and faceUp.getQuantity() > 0 then
+              bonusIncome = bonusIncome + (amount * faceUp.getQuantity())
+          else
+              bonusIncome = bonusIncome + amount
+          end
+      end
+  end
+
+  return {bonusIncome, oneTimeIncome}
 end
 
 function broadcastString(data)
@@ -322,26 +372,11 @@ local function collectIncome(power)
     local incomeCounter = getObjectFromGUID(incomeCounters[power]).Counter
     local ipcCounter = getObjectFromGUID(ipcCounters[power]).Counter
 
+    local bonusIncomeTable = countBonusIncome(power, true)
+
     local baseIncome = incomeCounter.getValue()
-    local bonusIncome = 0
-    local oneTimeIncome = 0
-
-    for _, zoneData in ipairs(nationalObjectiveZones[power]) do
-        local zoneObjects = getObjectFromGUID(zoneData[1]).getObjects()
-        local amount = zoneData[2]
-        local oneTime = zoneData[3]
-
-        local faceUp = findFaceUpTracker(zoneObjects)
-
-        if faceUp then
-            if oneTime then
-                oneTimeIncome = oneTimeIncome + amount
-                faceUp.flip()
-            else
-                bonusIncome = bonusIncome + amount
-            end
-        end
-    end
+    local bonusIncome = bonusIncomeTable[1]
+    local oneTimeIncome = bonusIncomeTable[2]
 
     ipcCounter.setValue(ipcCounter.getValue() + baseIncome + bonusIncome + oneTimeIncome)
 
@@ -357,6 +392,19 @@ local function collectIncome(power)
             delay = 2
         })
     end
+end
+
+function updateIPCTotals()
+  for power, counterGUID in pairs(totalIncomeCounters) do
+      local bonusIncomeTable = countBonusIncome(power, false)
+
+      local counter = getObjectFromGUID(counterGUID).Counter
+      local productionIncome = getObjectFromGUID(incomeCounters[power]).Counter.getValue()
+
+      local value = productionIncome + bonusIncomeTable[1] + bonusIncomeTable[2]
+
+      counter.setValue(value)
+  end
 end
 
 function collectIncomeBtn(obj, string_player_color, alt_click)
@@ -438,6 +486,13 @@ function onLoad()
         identifier = "Battle Board Timer",
         function_name = "updateBattleTotals",
         delay = 0.1,
+        repetitions = 0,
+    })
+
+    Timer.create({
+        identifier = "Income Tracking Timer",
+        function_name = "updateIPCTotals",
+        delay = 0.5,
         repetitions = 0,
     })
 end
